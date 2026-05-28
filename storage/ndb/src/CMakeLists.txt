@@ -87,9 +87,7 @@ ADD_EXECUTABLE(ndbclient_static_link_test ndbclient_link_test.cpp)
 SET_TARGET_PROPERTIES(ndbclient_static_link_test PROPERTIES ENABLE_EXPORTS TRUE)
 TARGET_LINK_LIBRARIES(ndbclient_static_link_test ndbclient_static)
 
-IF(NOT WITHOUT_SERVER)
-  ADD_SUBDIRECTORY(kernel)
-ENDIF()
+ADD_SUBDIRECTORY(kernel)
 ADD_SUBDIRECTORY(mgmclient)
 ADD_SUBDIRECTORY(mgmsrv)
 

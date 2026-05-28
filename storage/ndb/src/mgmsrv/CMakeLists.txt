@@ -37,10 +37,6 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/storage/ndb/src/common/mgmcommon
   )
 
-IF(WITHOUT_SERVER)
-  RETURN()
-ENDIF()
-
 # Define MYSQLCLUSTERDIR, the default location
 # of ndb_mgmd config files
 IF(NOT DEFINED DEFAULT_MYSQL_HOME)

@@ -1,0 +1,115 @@
+##############################################################################
+# Stage 1: builder (shared)
+# Compiles all NDB components from source.
+##############################################################################
+FROM debian:bookworm AS builder
+
+ARG BOOST_VERSION_MAJOR=1
+ARG BOOST_VERSION_MINOR=77
+ARG BOOST_VERSION_PATCH=0
+ARG BUILD_THREADS=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        pkg-config \
+        libssl-dev \
+        libncurses-dev \
+        libnuma-dev \
+        libaio-dev \
+        bison \
+        wget \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV BOOST_LABEL=boost_${BOOST_VERSION_MAJOR}_${BOOST_VERSION_MINOR}_${BOOST_VERSION_PATCH}
+ENV BOOST_VERSION=${BOOST_VERSION_MAJOR}.${BOOST_VERSION_MINOR}.${BOOST_VERSION_PATCH}
+ENV BOOST_ROOT=/opt/${BOOST_LABEL}
+
+RUN wget -q -P /tmp \
+        https://archives.boost.io/release/${BOOST_VERSION}/source/${BOOST_LABEL}.tar.gz \
+    && tar xzf /tmp/${BOOST_LABEL}.tar.gz -C /opt \
+    && rm /tmp/${BOOST_LABEL}.tar.gz
+
+COPY . /src
+
+# Configure, build, and install all NDB components.
+# WITHOUT_SERVER skips mysqld; WITH_NDB_TEST and WITH_RDRS default to OFF.
+RUN cmake -S /src -B /build \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DWITH_NDB=ON \
+        -DWITH_NDBMTD=ON \
+        -DWITHOUT_SERVER=ON \
+        -DWITH_NDB_JAVA=OFF \
+        -DWITH_SSL=system \
+        -DWITH_BOOST=${BOOST_ROOT} \
+        -DCMAKE_INSTALL_PREFIX=/install \
+    && cmake --build /build -j${BUILD_THREADS} \
+    && cmake --install /build
+
+##############################################################################
+# Stage 2: ndbd
+# Data node image. Build with: docker build --target ndbd -t ndbd .
+##############################################################################
+FROM debian:bookworm-slim AS ndbd
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        bash \
+        libssl3 \
+        libnuma1 \
+        libaio1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /install/bin/ndbmtd /usr/local/bin/ndbmtd
+
+COPY docker/entrypoint-ndbd.sh /entrypoint.sh
+
+RUN useradd --system --no-create-home --shell /usr/sbin/nologin ndb \
+    && mkdir -p /var/lib/ndb \
+    && chown ndb:ndb /var/lib/ndb
+
+USER ndb
+
+# NDB_MGM_HOSTS: comma-separated host:port list of management servers
+# NDB_NODE_ID:   explicit node ID; if unset, derived from pod ordinal
+# NDB_DAEMON:    ndbmtd (default)
+ENV NDB_MGM_HOSTS=localhost:1186
+ENV NDB_DAEMON=ndbmtd
+
+VOLUME ["/var/lib/ndb"]
+
+ENTRYPOINT ["/entrypoint.sh"]
+
+##############################################################################
+# Stage 3: ndb_mgmd
+# Management node image. Build with: docker build --target ndb_mgmd -t ndb_mgmd .
+##############################################################################
+FROM debian:bookworm-slim AS ndb_mgmd
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        bash \
+        libssl3 \
+        libnuma1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /install/bin/ndb_mgmd /usr/local/bin/ndb_mgmd
+COPY --from=builder /install/bin/ndb_mgm  /usr/local/bin/ndb_mgm
+
+COPY docker/entrypoint-ndb_mgmd.sh /entrypoint.sh
+
+RUN useradd --system --no-create-home --shell /usr/sbin/nologin ndb \
+    && mkdir -p /var/lib/ndb_mgmd /etc/ndb \
+    && chown ndb:ndb /var/lib/ndb_mgmd /etc/ndb
+
+USER ndb
+
+# NDB_MGMD_DIR:    working directory for mgmd state (mount a PVC here)
+# NDB_CONFIG_FILE: path to config.ini (provide via ConfigMap)
+ENV NDB_MGMD_DIR=/var/lib/ndb_mgmd
+ENV NDB_CONFIG_FILE=/etc/ndb/config.ini
+
+VOLUME ["/var/lib/ndb_mgmd"]
+
+EXPOSE 1186
+
+ENTRYPOINT ["/entrypoint.sh"]

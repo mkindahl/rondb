@@ -1,0 +1,11 @@
+.git
+docker
+!docker/entrypoint-*.sh
+*.md
+ndb-k8s-image-plan.md
+Dockerfile*
+Doxyfile*
+doxygen_resources
+mysql-test
+unittest
+packaging

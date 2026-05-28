@@ -24,10 +24,6 @@ INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/storage/ndb/src/common/mgmcommon)
 
 ADD_LIBRARY(ndbmgmclient STATIC CommandInterpreter.cpp)
 
-IF(WITHOUT_SERVER)
-  RETURN()
-ENDIF()
-
 MYSQL_ADD_EXECUTABLE(ndb_mgm
   main.cpp
   COMPONENT ClusterManagementClient
